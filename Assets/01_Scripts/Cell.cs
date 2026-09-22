@@ -1,22 +1,167 @@
-using UnityEngine;
+锘縰sing UnityEngine;
 
 public class Cell : MonoBehaviour
 {
-    private bool wasClicked = false;
+    [Header("Colores")]
+    [SerializeField]
+    private Color[] possibleColors;
+
+    [Header("Tama帽os")]
+    [SerializeField]
+    private float[] sizeValues =
+    {
+        0.6f,
+        1.0f,
+        1.4f
+    };
+
+    private bool resultRegistered = false;
+
+    private Color currentColor;
+    private int currentColorIndex;
+    private int currentSizeLevel;
+    private float currentSize;
+
+    private void Start()
+    {
+        ApplyCharacteristics();
+    }
+
+    private void ApplyCharacteristics()
+    {
+        // Primero preguntamos a la IA si ya tiene
+        // suficiente conocimiento para tomar una decisi贸n.
+        if (GameManager.Instance != null &&
+            GameManager.Instance.TryGetLearnedCharacteristics(
+                out int learnedColorIndex,
+                out int learnedSizeLevel))
+        {
+            if (possibleColors != null &&
+                possibleColors.Length > learnedColorIndex &&
+                sizeValues != null &&
+                sizeValues.Length > learnedSizeLevel)
+            {
+                SetCharacteristics(
+                    learnedColorIndex,
+                    learnedSizeLevel
+                );
+
+                return;
+            }
+        }
+
+        // Si no hay conocimiento suficiente,
+        // exploramos una combinaci贸n nueva.
+        ApplyRandomCharacteristics();
+    }
+
+    private void ApplyRandomCharacteristics()
+    {
+        if (possibleColors == null ||
+            possibleColors.Length == 0)
+        {
+            Debug.LogWarning(
+                "Cell necesita al menos un color."
+            );
+
+            return;
+        }
+
+        if (sizeValues == null ||
+            sizeValues.Length == 0)
+        {
+            Debug.LogWarning(
+                "Cell necesita al menos un tama帽o."
+            );
+
+            return;
+        }
+
+        int randomColorIndex =
+            Random.Range(
+                0,
+                possibleColors.Length
+            );
+
+        int randomSizeLevel =
+            Random.Range(
+                0,
+                sizeValues.Length
+            );
+
+        SetCharacteristics(
+            randomColorIndex,
+            randomSizeLevel
+        );
+    }
+
+    private void SetCharacteristics(
+        int colorIndex,
+        int sizeLevel)
+    {
+        currentColorIndex = colorIndex;
+        currentSizeLevel = sizeLevel;
+
+        currentColor =
+            possibleColors[colorIndex];
+
+        currentSize =
+            sizeValues[sizeLevel];
+
+        transform.localScale =
+            Vector3.one * currentSize;
+
+        SpriteRenderer spriteRenderer =
+            GetComponent<SpriteRenderer>();
+
+        if (spriteRenderer != null)
+        {
+            spriteRenderer.color =
+                currentColor;
+        }
+    }
 
     private void OnMouseDown()
     {
-        if (wasClicked)
+        if (resultRegistered)
             return;
 
-        wasClicked = true;
+        // El jugador elimin贸 la c茅lula.
+        RegisterResult(false);
 
-        Debug.Log("閘ula eliminada!");
+        Debug.Log(
+            "隆C茅lula eliminada!"
+        );
 
-        // Aumenta la puntuaci髇.
-        GameManager.Instance.AddScore(1);
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.AddScore(1);
+        }
 
-        // Elimina la c閘ula.
         Destroy(gameObject);
+    }
+
+    public void RegisterSurvival()
+    {
+        if (resultRegistered)
+            return;
+
+        // Lleg贸 viva al final de la ronda.
+        RegisterResult(true);
+    }
+
+    private void RegisterResult(
+        bool survived)
+    {
+        resultRegistered = true;
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.RegisterCellExperience(
+                currentColorIndex,
+                currentSizeLevel,
+                survived
+            );
+        }
     }
 }
