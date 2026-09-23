@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using UnityEngine.SceneManagement;
 using TMPro;
 using UnityEngine;
 
@@ -55,14 +56,37 @@ public class GameManager : MonoBehaviour
     [SerializeField] private TMP_Text learningModeText;
     [SerializeField] private TMP_Text learningTableText;
 
+    [Header("Fin de partida")]
+    [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private TMP_Text finalScoreText;
+    [SerializeField] private TMP_Text finalRoundText;
+
+    [Header("Pantalla inicial")]
+    [SerializeField] private GameObject startPanel;
+
+    [Header("Panel de resultado")]
+    [SerializeField] private GameObject roundResultPanel;
+    [SerializeField] private TMP_Text resultEliminatedText;
+    [SerializeField] private TMP_Text resultSurvivorsText;
+    [SerializeField] private TMP_Text resultLearningText;
+
+    private bool waitingForNextRound = false;
+
     [Header("Ronda")]
     [SerializeField] private float roundDuration = 10f;
+    [SerializeField] private int maxRounds = 5;
 
     [Header("Spawner")]
     [SerializeField] private CellSpawner cellSpawner;
 
     [Header("Aprendizaje")]
     [SerializeField] private float explorationChance = 0.30f;
+
+    [Header("Entorno")]
+    [SerializeField]
+    private Color environmentColor =
+    new Color(0.3f, 0.3f, 0.3f);
+
     [SerializeField] private int minimumAttemptsToLearn = 2;
 
     private List<CellExperience> experiences =
@@ -71,6 +95,8 @@ public class GameManager : MonoBehaviour
     private int score = 0;
     private int currentRound = 1;
     private float currentTime;
+
+    private bool gameFinished = false;
 
     private int roundSurvivals = 0;
     private int roundEliminations = 0;
@@ -85,6 +111,13 @@ public class GameManager : MonoBehaviour
 
         Instance = this;
     }
+    public Color EnvironmentColor
+    {
+        get
+        {
+            return environmentColor;
+        }
+    }
 
     private void Start()
     {
@@ -95,16 +128,62 @@ public class GameManager : MonoBehaviour
         UpdateRoundUI();
         UpdateStatsUI();
         UpdateLearningTableUI();
+        UpdateLearningModeUI("Esperando");
+
+        if (startPanel != null)
+        {
+            startPanel.SetActive(true);
+        }
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(false);
+        }
+
+        if (gameOverPanel != null)
+        {
+            gameOverPanel.SetActive(false);
+        }
+    }
+
+    public void StartGame()
+    {
+        if (startPanel != null)
+        {
+            startPanel.SetActive(false);
+        }
+
+        currentRound = 1;
+        currentTime = roundDuration;
+
+        score = 0;
+        roundSurvivals = 0;
+        roundEliminations = 0;
+
+        gameFinished = false;
+        waitingForNextRound = false;
+
+        UpdateScoreUI();
+        UpdateTimerUI();
+        UpdateRoundUI();
+        UpdateStatsUI();
+        UpdateLearningTableUI();
         UpdateLearningModeUI("Exploración");
 
         if (cellSpawner != null)
         {
+            cellSpawner.ClearCells();
             cellSpawner.SpawnCells();
         }
+
+        Debug.Log("COMIENZA LA PARTIDA");
     }
 
     private void Update()
     {
+        if (waitingForNextRound || gameFinished)
+            return;
+
         currentTime -= Time.deltaTime;
 
         if (currentTime <= 0f)
@@ -315,21 +394,96 @@ public class GameManager : MonoBehaviour
             currentRound
         );
 
-        // Las células que siguen vivas cuentan
-        // como experiencias exitosas.
+        // Registrar las células que sobrevivieron.
         if (cellSpawner != null)
         {
             cellSpawner.RegisterSurvivingCells();
         }
 
+        // Actualizar estadísticas antes de mostrarlas.
         UpdateStatsUI();
         UpdateLearningTableUI();
 
-        // Limpiar las células de la ronda.
+        // Mostrar resultados.
+        ShowRoundResults();
+
+        // Eliminar las células de la ronda anterior.
         if (cellSpawner != null)
         {
             cellSpawner.ClearCells();
         }
+
+        waitingForNextRound = true;
+    }
+
+    private void ShowRoundResults()
+    {
+        if (resultEliminatedText != null)
+        {
+            resultEliminatedText.text =
+                "Eliminadas: " +
+                roundEliminations;
+        }
+
+        if (resultSurvivorsText != null)
+        {
+            resultSurvivorsText.text =
+                "Sobrevivientes: " +
+                roundSurvivals;
+        }
+
+        if (resultLearningText != null)
+        {
+            CellExperience best =
+                GetBestExperience();
+
+            if (best != null)
+            {
+                resultLearningText.text =
+                    "Mejor estrategia: " +
+                    GetColorName(best.colorIndex) +
+                    " + " +
+                    GetSizeName(best.sizeLevel) +
+                    "\nSupervivencia: " +
+                    (best.SurvivalRate * 100f)
+                        .ToString("F1") +
+                    "%";
+            }
+            else
+            {
+                resultLearningText.text =
+                    "Mejor estrategia: recopilando datos...";
+            }
+        }
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(true);
+        }
+    }
+
+    public void RestartGame()
+    {
+        Time.timeScale = 1f;
+
+        SceneManager.LoadScene(
+            SceneManager.GetActiveScene().buildIndex
+        );
+    }
+    public void ContinueToNextRound()
+    {
+        if (!waitingForNextRound)
+            return;
+
+        // Si ya terminamos la última ronda,
+        // mostramos la pantalla final.
+        if (currentRound >= maxRounds)
+        {
+            ShowGameOver();
+            return;
+        }
+
+        waitingForNextRound = false;
 
         currentRound++;
         currentTime = roundDuration;
@@ -339,6 +493,12 @@ public class GameManager : MonoBehaviour
 
         UpdateRoundUI();
         UpdateStatsUI();
+        UpdateLearningTableUI();
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(false);
+        }
 
         Debug.Log(
             "COMIENZA LA RONDA " +
@@ -349,6 +509,44 @@ public class GameManager : MonoBehaviour
         {
             cellSpawner.SpawnCells();
         }
+    }
+
+    private void ShowGameOver()
+    {
+        gameFinished = true;
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(false);
+        }
+
+        if (cellSpawner != null)
+        {
+            cellSpawner.ClearCells();
+        }
+
+        if (finalScoreText != null)
+        {
+            finalScoreText.text =
+                "Puntuación final: " +
+                score;
+        }
+
+        if (finalRoundText != null)
+        {
+            finalRoundText.text =
+                "Rondas completadas: " +
+                maxRounds;
+        }
+
+        if (gameOverPanel != null)
+        {
+            gameOverPanel.SetActive(true);
+        }
+
+        Debug.Log(
+            "FIN DE LA PARTIDA"
+        );
     }
 
     private void UpdateScoreUI()

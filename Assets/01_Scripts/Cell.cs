@@ -21,6 +21,7 @@ public class Cell : MonoBehaviour
     private int currentColorIndex;
     private int currentSizeLevel;
     private float currentSize;
+    private float camouflageLevel;
 
     private void Start()
     {
@@ -96,8 +97,8 @@ public class Cell : MonoBehaviour
     }
 
     private void SetCharacteristics(
-        int colorIndex,
-        int sizeLevel)
+    int colorIndex,
+    int sizeLevel)
     {
         currentColorIndex = colorIndex;
         currentSizeLevel = sizeLevel;
@@ -111,14 +112,117 @@ public class Cell : MonoBehaviour
         transform.localScale =
             Vector3.one * currentSize;
 
+        // Calcular camuflaje.
+        camouflageLevel =
+            CalculateCamouflage();
+
         SpriteRenderer spriteRenderer =
             GetComponent<SpriteRenderer>();
 
         if (spriteRenderer != null)
         {
             spriteRenderer.color =
-                currentColor;
+                GetCamouflagedColor(currentColor);
         }
+
+        Debug.Log(
+            "Célula creada → " +
+            "Color: " +
+            currentColorIndex +
+            " | Tamaño: " +
+            currentSizeLevel +
+            " | Camuflaje: " +
+            (camouflageLevel * 100f).ToString("F0") +
+            "%"
+        );
+    }
+
+
+    private float CalculateCamouflage()
+    {
+        if (GameManager.Instance == null)
+        {
+            return 0f;
+        }
+
+        Color environmentColor =
+            GameManager.Instance.EnvironmentColor;
+
+        float colorDifference =
+            Vector3.Distance(
+                new Vector3(
+                    currentColor.r,
+                    currentColor.g,
+                    currentColor.b
+                ),
+                new Vector3(
+                    environmentColor.r,
+                    environmentColor.g,
+                    environmentColor.b
+                )
+            );
+
+        // Convertimos diferencia de color
+        // en similitud.
+        float colorCamouflage =
+            1f - Mathf.Clamp01(
+                colorDifference
+            );
+
+        // Las células pequeñas son más difíciles
+        // de detectar.
+        float sizeCamouflage;
+
+        switch (currentSizeLevel)
+        {
+            case 0:
+                sizeCamouflage = 0.8f;
+                break;
+
+            case 1:
+                sizeCamouflage = 0.5f;
+                break;
+
+            case 2:
+                sizeCamouflage = 0.2f;
+                break;
+
+            default:
+                sizeCamouflage = 0.5f;
+                break;
+        }
+
+        // Combinamos color y tamaño.
+        float finalCamouflage =
+            (colorCamouflage * 0.7f) +
+            (sizeCamouflage * 0.3f);
+
+        return Mathf.Clamp01(
+            finalCamouflage
+        );
+    }
+
+    private Color GetCamouflagedColor(
+    Color originalColor)
+    {
+        if (GameManager.Instance == null)
+        {
+            return originalColor;
+        }
+
+        Color environmentColor =
+            GameManager.Instance.EnvironmentColor;
+
+        // Cuanto mayor sea el camuflaje,
+        // más se mezcla la célula con el entorno.
+        Color camouflagedColor =
+            Color.Lerp(
+                originalColor,
+                environmentColor,
+                camouflageLevel * 0.65f
+            );
+
+        return camouflagedColor;
     }
 
     private void OnMouseDown()
@@ -164,4 +268,5 @@ public class Cell : MonoBehaviour
             );
         }
     }
+
 }
