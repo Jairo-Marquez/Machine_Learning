@@ -10,59 +10,31 @@ public class Cell : MonoBehaviour
     [SerializeField]
     private float[] sizeValues =
     {
-        0.6f,
-        1.0f,
-        1.4f
+        0.8f,
+        1.2f,
+        1.6f
     };
 
     private bool resultRegistered = false;
 
-    private Color currentColor;
     private int currentColorIndex;
     private int currentSizeLevel;
+
+    private Color currentColor;
     private float currentSize;
-    private float camouflageLevel;
 
     private void Start()
     {
-        ApplyCharacteristics();
+        GenerateCharacteristics();
     }
 
-    private void ApplyCharacteristics()
-    {
-        // Primero preguntamos a la IA si ya tiene
-        // suficiente conocimiento para tomar una decisión.
-        if (GameManager.Instance != null &&
-            GameManager.Instance.TryGetLearnedCharacteristics(
-                out int learnedColorIndex,
-                out int learnedSizeLevel))
-        {
-            if (possibleColors != null &&
-                possibleColors.Length > learnedColorIndex &&
-                sizeValues != null &&
-                sizeValues.Length > learnedSizeLevel)
-            {
-                SetCharacteristics(
-                    learnedColorIndex,
-                    learnedSizeLevel
-                );
-
-                return;
-            }
-        }
-
-        // Si no hay conocimiento suficiente,
-        // exploramos una combinación nueva.
-        ApplyRandomCharacteristics();
-    }
-
-    private void ApplyRandomCharacteristics()
+    private void GenerateCharacteristics()
     {
         if (possibleColors == null ||
             possibleColors.Length == 0)
         {
-            Debug.LogWarning(
-                "Cell necesita al menos un color."
+            Debug.LogError(
+                "Cell: No hay colores configurados."
             );
 
             return;
@@ -71,40 +43,76 @@ public class Cell : MonoBehaviour
         if (sizeValues == null ||
             sizeValues.Length == 0)
         {
-            Debug.LogWarning(
-                "Cell necesita al menos un tamaño."
+            Debug.LogError(
+                "Cell: No hay tamaños configurados."
             );
 
             return;
         }
 
-        int randomColorIndex =
+        // Intentar usar conocimiento aprendido.
+        if (GameManager.Instance != null &&
+            GameManager.Instance.TryGetLearnedCharacteristics(
+                out int learnedColor,
+                out int learnedSize))
+        {
+            SetCharacteristics(
+                learnedColor,
+                learnedSize
+            );
+
+            return;
+        }
+
+        // Si no hay conocimiento suficiente:
+        // explorar una combinación aleatoria.
+        int randomColor =
             Random.Range(
                 0,
                 possibleColors.Length
             );
 
-        int randomSizeLevel =
+        int randomSize =
             Random.Range(
                 0,
                 sizeValues.Length
             );
 
         SetCharacteristics(
-            randomColorIndex,
-            randomSizeLevel
+            randomColor,
+            randomSize
         );
     }
 
     private void SetCharacteristics(
-    int colorIndex,
-    int sizeLevel)
+        int colorIndex,
+        int sizeLevel)
     {
         currentColorIndex = colorIndex;
         currentSizeLevel = sizeLevel;
 
-        currentColor =
+        Color baseColor =
             possibleColors[colorIndex];
+
+        // El GameManager decide cuánto se ha
+        // adaptado esta combinación al fondo.
+        if (GameManager.Instance != null)
+        {
+            currentColor =
+                GameManager.Instance.GetAdaptiveColor(
+                    colorIndex,
+                    sizeLevel,
+                    baseColor
+                );
+        }
+        else
+        {
+            currentColor = baseColor;
+        }
+
+        // Forzar opacidad total: si en el Inspector algun color
+        // quedo con alpha = 0, la celula seria invisible.
+        currentColor.a = 1f;
 
         currentSize =
             sizeValues[sizeLevel];
@@ -112,117 +120,26 @@ public class Cell : MonoBehaviour
         transform.localScale =
             Vector3.one * currentSize;
 
-        // Calcular camuflaje.
-        camouflageLevel =
-            CalculateCamouflage();
-
         SpriteRenderer spriteRenderer =
             GetComponent<SpriteRenderer>();
 
         if (spriteRenderer != null)
         {
             spriteRenderer.color =
-                GetCamouflagedColor(currentColor);
+                currentColor;
+
+            // Asegurar que la célula sea visible
+            // sobre otros sprites.
+            spriteRenderer.sortingOrder = 10;
         }
 
         Debug.Log(
-            "Célula creada → " +
+            "CELULA CREADA → " +
             "Color: " +
-            currentColorIndex +
+            GetColorName(currentColorIndex) +
             " | Tamaño: " +
-            currentSizeLevel +
-            " | Camuflaje: " +
-            (camouflageLevel * 100f).ToString("F0") +
-            "%"
+            GetSizeName(currentSizeLevel)
         );
-    }
-
-
-    private float CalculateCamouflage()
-    {
-        if (GameManager.Instance == null)
-        {
-            return 0f;
-        }
-
-        Color environmentColor =
-            GameManager.Instance.EnvironmentColor;
-
-        float colorDifference =
-            Vector3.Distance(
-                new Vector3(
-                    currentColor.r,
-                    currentColor.g,
-                    currentColor.b
-                ),
-                new Vector3(
-                    environmentColor.r,
-                    environmentColor.g,
-                    environmentColor.b
-                )
-            );
-
-        // Convertimos diferencia de color
-        // en similitud.
-        float colorCamouflage =
-            1f - Mathf.Clamp01(
-                colorDifference
-            );
-
-        // Las células pequeñas son más difíciles
-        // de detectar.
-        float sizeCamouflage;
-
-        switch (currentSizeLevel)
-        {
-            case 0:
-                sizeCamouflage = 0.8f;
-                break;
-
-            case 1:
-                sizeCamouflage = 0.5f;
-                break;
-
-            case 2:
-                sizeCamouflage = 0.2f;
-                break;
-
-            default:
-                sizeCamouflage = 0.5f;
-                break;
-        }
-
-        // Combinamos color y tamaño.
-        float finalCamouflage =
-            (colorCamouflage * 0.7f) +
-            (sizeCamouflage * 0.3f);
-
-        return Mathf.Clamp01(
-            finalCamouflage
-        );
-    }
-
-    private Color GetCamouflagedColor(
-    Color originalColor)
-    {
-        if (GameManager.Instance == null)
-        {
-            return originalColor;
-        }
-
-        Color environmentColor =
-            GameManager.Instance.EnvironmentColor;
-
-        // Cuanto mayor sea el camuflaje,
-        // más se mezcla la célula con el entorno.
-        Color camouflagedColor =
-            Color.Lerp(
-                originalColor,
-                environmentColor,
-                camouflageLevel * 0.65f
-            );
-
-        return camouflagedColor;
     }
 
     private void OnMouseDown()
@@ -230,17 +147,21 @@ public class Cell : MonoBehaviour
         if (resultRegistered)
             return;
 
-        // El jugador eliminó la célula.
+        // Si el jugador hizo clic,
+        // esta célula NO sobrevivió.
         RegisterResult(false);
-
-        Debug.Log(
-            "¡Célula eliminada!"
-        );
 
         if (GameManager.Instance != null)
         {
             GameManager.Instance.AddScore(1);
         }
+
+        Debug.Log(
+            "CELULA ELIMINADA → " +
+            GetColorName(currentColorIndex) +
+            " + " +
+            GetSizeName(currentSizeLevel)
+        );
 
         Destroy(gameObject);
     }
@@ -250,7 +171,7 @@ public class Cell : MonoBehaviour
         if (resultRegistered)
             return;
 
-        // Llegó viva al final de la ronda.
+        // Llegó viva al final de los 10 segundos.
         RegisterResult(true);
     }
 
@@ -269,4 +190,47 @@ public class Cell : MonoBehaviour
         }
     }
 
+    private string GetColorName(
+        int colorIndex)
+    {
+        switch (colorIndex)
+        {
+            case 0:
+                return "Rojo";
+
+            case 1:
+                return "Verde";
+
+            case 2:
+                return "Azul";
+
+            case 3:
+                return "Amarillo";
+
+            case 4:
+                return "Magenta";
+
+            default:
+                return "Desconocido";
+        }
+    }
+
+    private string GetSizeName(
+        int sizeLevel)
+    {
+        switch (sizeLevel)
+        {
+            case 0:
+                return "Pequeño";
+
+            case 1:
+                return "Mediano";
+
+            case 2:
+                return "Grande";
+
+            default:
+                return "Desconocido";
+        }
+    }
 }

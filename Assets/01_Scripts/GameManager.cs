@@ -1,11 +1,14 @@
 ﻿using System.Collections.Generic;
-using UnityEngine.SceneManagement;
 using TMPro;
 using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
+
+    // =========================================================
+    // EXPERIENCIA DE UNA COMBINACIÓN
+    // =========================================================
 
     [System.Serializable]
     public class CellExperience
@@ -31,13 +34,17 @@ public class GameManager : MonoBehaviour
         {
             get
             {
-                // Suavizado para evitar que una sola prueba
-                // determine completamente la estrategia.
-                return (survivals + 1f) / (attempts + 2f);
+                // Suavizado:
+                // una sola prueba no determina
+                // completamente la estrategia.
+                return (survivals + 1f) /
+                       (attempts + 2f);
             }
         }
 
-        public CellExperience(int colorIndex, int sizeLevel)
+        public CellExperience(
+            int colorIndex,
+            int sizeLevel)
         {
             this.colorIndex = colorIndex;
             this.sizeLevel = sizeLevel;
@@ -46,71 +53,120 @@ public class GameManager : MonoBehaviour
         }
     }
 
+
+    // =========================================================
+    // UI
+    // =========================================================
+
     [Header("UI")]
     [SerializeField] private TMP_Text scoreText;
     [SerializeField] private TMP_Text timerText;
     [SerializeField] private TMP_Text roundText;
+
     [SerializeField] private TMP_Text survivorsText;
     [SerializeField] private TMP_Text eliminatedText;
+
     [SerializeField] private TMP_Text learningText;
     [SerializeField] private TMP_Text learningModeText;
     [SerializeField] private TMP_Text learningTableText;
 
-    [Header("Fin de partida")]
-    [SerializeField] private GameObject gameOverPanel;
-    [SerializeField] private TMP_Text finalScoreText;
-    [SerializeField] private TMP_Text finalRoundText;
 
-    [Header("Pantalla inicial")]
-    [SerializeField] private GameObject startPanel;
+    // =========================================================
+    // PANEL DE RESULTADO
+    // =========================================================
 
-    [Header("Panel de resultado")]
+    [Header("Resultado de ronda")]
     [SerializeField] private GameObject roundResultPanel;
     [SerializeField] private TMP_Text resultEliminatedText;
     [SerializeField] private TMP_Text resultSurvivorsText;
     [SerializeField] private TMP_Text resultLearningText;
 
-    private bool waitingForNextRound = false;
 
-    [Header("Ronda")]
+    // =========================================================
+    // MENU INICIAL
+    // =========================================================
+
+    [Header("Pantalla inicial")]
+    [SerializeField] private GameObject startPanel;
+
+
+    // =========================================================
+    // RONDA
+    // =========================================================
+
+    [Header("Configuración de ronda")]
     [SerializeField] private float roundDuration = 10f;
-    [SerializeField] private int maxRounds = 5;
+
+
+    // =========================================================
+    // SPAWNER
+    // =========================================================
 
     [Header("Spawner")]
     [SerializeField] private CellSpawner cellSpawner;
 
-    [Header("Aprendizaje")]
+
+    // =========================================================
+    // APRENDIZAJE
+    // =========================================================
+
+    [Header("Machine Learning")]
+    [Range(0f, 1f)]
     [SerializeField] private float explorationChance = 0.30f;
+
+    [SerializeField] private int minimumAttemptsToLearn = 2;
+
+    [SerializeField] private float adaptationPerFailure = 0.20f;
+
+
+    // =========================================================
+    // ENTORNO
+    // =========================================================
 
     [Header("Entorno")]
     [SerializeField]
     private Color environmentColor =
-    new Color(0.3f, 0.3f, 0.3f);
+        new Color(
+            106f / 255f,
+            106f / 255f,
+            106f / 255f,
+            1f
+        );
 
-    [SerializeField] private int minimumAttemptsToLearn = 2;
+
+    // =========================================================
+    // VARIABLES INTERNAS
+    // =========================================================
 
     private List<CellExperience> experiences =
         new List<CellExperience>();
 
+    // Adaptación independiente para:
+    // color + tamaño.
+    //
+    // 5 colores x 3 tamaños.
+    private float[,] adaptationLevels =
+        new float[5, 3];
+
+
     private int score = 0;
     private int currentRound = 1;
-    private float currentTime;
 
-    private bool gameFinished = false;
+    private float currentTime;
 
     private int roundSurvivals = 0;
     private int roundEliminations = 0;
 
-    private void Awake()
-    {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
+    private bool waitingForNextRound = false;
 
-        Instance = this;
-    }
+    // El temporizador solo corre despues de pulsar JUGAR.
+    private bool gameRunning = false;
+
+
+    // =========================================================
+    // PROPIEDADES PÚBLICAS
+    // =========================================================
+
     public Color EnvironmentColor
     {
         get
@@ -119,17 +175,46 @@ public class GameManager : MonoBehaviour
         }
     }
 
+
+    // =========================================================
+    // AWAKE
+    // =========================================================
+
+    private void Awake()
+    {
+        if (Instance != null &&
+            Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+    }
+
+
+    // =========================================================
+    // START
+    // =========================================================
+
     private void Start()
     {
-        currentTime = roundDuration;
+        currentTime =
+            roundDuration;
+
+        ApplyEnvironmentColor();
 
         UpdateScoreUI();
         UpdateTimerUI();
         UpdateRoundUI();
         UpdateStatsUI();
         UpdateLearningTableUI();
-        UpdateLearningModeUI("Esperando");
 
+        UpdateLearningModeUI(
+            "Esperando"
+        );
+
+        // Mostrar menú inicial.
         if (startPanel != null)
         {
             startPanel.SetActive(true);
@@ -139,36 +224,83 @@ public class GameManager : MonoBehaviour
         {
             roundResultPanel.SetActive(false);
         }
-
-        if (gameOverPanel != null)
-        {
-            gameOverPanel.SetActive(false);
-        }
     }
+
+
+    // =========================================================
+    // UPDATE
+    // =========================================================
+
+    private void Update()
+    {
+        if (!gameRunning || waitingForNextRound)
+        {
+            return;
+        }
+
+        currentTime -=
+            Time.deltaTime;
+
+        if (currentTime <= 0f)
+        {
+            currentTime = 0f;
+
+            EndRound();
+
+            return;
+        }
+
+        UpdateTimerUI();
+    }
+
+
+    // =========================================================
+    // INICIAR PARTIDA
+    // =========================================================
 
     public void StartGame()
     {
+        score = 0;
+
+        currentRound = 1;
+
+        currentTime = roundDuration;
+
+        roundSurvivals = 0;
+
+        roundEliminations = 0;
+
+        waitingForNextRound = false;
+
+        gameRunning = true;
+
+        // Reiniciar completamente el aprendizaje.
+        experiences.Clear();
+
+        adaptationLevels =
+            new float[5, 3];
+
         if (startPanel != null)
         {
             startPanel.SetActive(false);
         }
 
-        currentRound = 1;
-        currentTime = roundDuration;
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(false);
+        }
 
-        score = 0;
-        roundSurvivals = 0;
-        roundEliminations = 0;
-
-        gameFinished = false;
-        waitingForNextRound = false;
+        ApplyEnvironmentColor();
 
         UpdateScoreUI();
         UpdateTimerUI();
         UpdateRoundUI();
         UpdateStatsUI();
         UpdateLearningTableUI();
-        UpdateLearningModeUI("Exploración");
+
+        UpdateLearningModeUI(
+            "Exploración"
+        );
 
         if (cellSpawner != null)
         {
@@ -176,30 +308,27 @@ public class GameManager : MonoBehaviour
             cellSpawner.SpawnCells();
         }
 
-        Debug.Log("COMIENZA LA PARTIDA");
+        Debug.Log(
+            "===== COMIENZA LA PARTIDA ====="
+        );
     }
 
-    private void Update()
-    {
-        if (waitingForNextRound || gameFinished)
-            return;
 
-        currentTime -= Time.deltaTime;
-
-        if (currentTime <= 0f)
-        {
-            currentTime = 0f;
-            EndRound();
-        }
-
-        UpdateTimerUI();
-    }
+    // =========================================================
+    // PUNTUACIÓN
+    // =========================================================
 
     public void AddScore(int amount)
     {
         score += amount;
+
         UpdateScoreUI();
     }
+
+
+    // =========================================================
+    // REGISTRAR EXPERIENCIA
+    // =========================================================
 
     public void RegisterCellExperience(
         int colorIndex,
@@ -207,47 +336,168 @@ public class GameManager : MonoBehaviour
         bool survived)
     {
         CellExperience experience =
-            FindExperience(colorIndex, sizeLevel);
-
-        if (experience == null)
-        {
-            experience = new CellExperience(
+            FindExperience(
                 colorIndex,
                 sizeLevel
             );
 
-            experiences.Add(experience);
+
+        if (experience == null)
+        {
+            experience =
+                new CellExperience(
+                    colorIndex,
+                    sizeLevel
+                );
+
+            experiences.Add(
+                experience
+            );
         }
 
+
         experience.attempts++;
+
 
         if (survived)
         {
             experience.survivals++;
+
             roundSurvivals++;
+
+            Debug.Log(
+                "SUPERVIVENCIA → " +
+                GetColorName(colorIndex) +
+                " + " +
+                GetSizeName(sizeLevel)
+            );
         }
         else
         {
             roundEliminations++;
+
+            // Una eliminación provoca
+            // adaptación hacia el fondo.
+            AdaptAfterFailure(
+                colorIndex,
+                sizeLevel
+            );
         }
+
 
         Debug.Log(
             "APRENDIZAJE → " +
-            "Color: " + GetColorName(colorIndex) +
-            " | Tamaño: " + GetSizeName(sizeLevel) +
-            " | Intentos: " + experience.attempts +
-            " | Supervivencias: " + experience.survivals +
+            GetColorName(colorIndex) +
+            " + " +
+            GetSizeName(sizeLevel) +
+            " | Intentos: " +
+            experience.attempts +
+            " | Supervivencias: " +
+            experience.survivals +
             " | Supervivencia: " +
-            (experience.SurvivalRate * 100f).ToString("F1") +
-            "%" +
-            " | Score: " +
-            (experience.LearningScore * 100f).ToString("F1") +
+            (
+                experience.SurvivalRate * 100f
+            ).ToString("F1") +
             "%"
         );
+
 
         UpdateStatsUI();
         UpdateLearningTableUI();
     }
+
+
+    // =========================================================
+    // ADAPTACIÓN DESPUÉS DE SER ELIMINADA
+    // =========================================================
+
+    private void AdaptAfterFailure(
+    int colorIndex,
+    int sizeLevel)
+    {
+        if (colorIndex < 0 ||
+            colorIndex >= 5)
+        {
+            return;
+        }
+
+        if (sizeLevel < 0 ||
+            sizeLevel >= 3)
+        {
+            return;
+        }
+
+        adaptationLevels[
+            colorIndex,
+            sizeLevel
+        ] += adaptationPerFailure;
+
+        adaptationLevels[
+            colorIndex,
+            sizeLevel
+        ] = Mathf.Clamp01(
+            adaptationLevels[
+                colorIndex,
+                sizeLevel
+            ]
+        );
+
+        Debug.Log(
+            "ADAPTACIÓN → " +
+            GetColorName(colorIndex) +
+            " + " +
+            GetSizeName(sizeLevel) +
+            " | Nivel: " +
+            (
+                adaptationLevels[
+                    colorIndex,
+                    sizeLevel
+                ] * 100f
+            ).ToString("F0") +
+            "%"
+        );
+    }
+
+
+    // =========================================================
+    // OBTENER COLOR ADAPTADO
+    // =========================================================
+
+    public Color GetAdaptiveColor(
+    int colorIndex,
+    int sizeLevel,
+    Color originalColor)
+    {
+        if (colorIndex < 0 ||
+            colorIndex >= 5 ||
+            sizeLevel < 0 ||
+            sizeLevel >= 3)
+        {
+            return originalColor;
+        }
+
+        float adaptation =
+            adaptationLevels[colorIndex, sizeLevel];
+
+        // MUY IMPORTANTE:
+        // Si nunca ha sido eliminada esta combinación,
+        // debe conservar exactamente su color original.
+        if (adaptation <= 0f)
+        {
+            return originalColor;
+        }
+
+        return Color.Lerp(
+            originalColor,
+            environmentColor,
+            adaptation
+        );
+    }
+
+
+    // =========================================================
+    // DECISIÓN DE LA IA
+    // =========================================================
 
     public bool TryGetLearnedCharacteristics(
         out int learnedColorIndex,
@@ -256,62 +506,95 @@ public class GameManager : MonoBehaviour
         learnedColorIndex = 0;
         learnedSizeLevel = 1;
 
-        // Todavía no tenemos experiencias.
+
+        // Todavía no existe suficiente conocimiento.
         if (experiences.Count == 0)
         {
-            UpdateLearningModeUI("Exploración");
+            UpdateLearningModeUI(
+                "Exploración"
+            );
+
             return false;
         }
 
-        // 30% de exploración.
-        if (Random.value < explorationChance)
+
+        // 30%: explorar algo nuevo.
+        if (Random.value <
+            explorationChance)
         {
-            UpdateLearningModeUI("Exploración");
+            UpdateLearningModeUI(
+                "Exploración"
+            );
+
             return false;
         }
 
-        CellExperience bestExperience =
+
+        CellExperience best =
             GetBestExperience();
 
-        // No existe una experiencia suficientemente estable.
-        if (bestExperience == null)
+
+        if (best == null)
         {
-            UpdateLearningModeUI("Exploración");
+            UpdateLearningModeUI(
+                "Exploración"
+            );
+
             return false;
         }
 
+
+        // 70%: utilizar conocimiento.
         learnedColorIndex =
-            bestExperience.colorIndex;
+            best.colorIndex;
 
         learnedSizeLevel =
-            bestExperience.sizeLevel;
+            best.sizeLevel;
+
 
         UpdateLearningModeUI(
             "Aprendizaje"
         );
 
+
         Debug.Log(
             "DECISIÓN IA → " +
-            "Color: " +
-            GetColorName(learnedColorIndex) +
-            " | Tamaño: " +
-            GetSizeName(learnedSizeLevel) +
+            GetColorName(
+                learnedColorIndex
+            ) +
+            " + " +
+            GetSizeName(
+                learnedSizeLevel
+            ) +
             " | Score: " +
-            (bestExperience.LearningScore * 100f).ToString("F1") +
+            (
+                best.LearningScore * 100f
+            ).ToString("F1") +
             "%"
         );
 
+
         return true;
     }
+
+
+    // =========================================================
+    // BUSCAR EXPERIENCIA
+    // =========================================================
 
     private CellExperience FindExperience(
         int colorIndex,
         int sizeLevel)
     {
-        foreach (CellExperience experience in experiences)
+        foreach (
+            CellExperience experience
+            in experiences)
         {
-            if (experience.colorIndex == colorIndex &&
-                experience.sizeLevel == sizeLevel)
+            if (
+                experience.colorIndex ==
+                    colorIndex &&
+                experience.sizeLevel ==
+                    sizeLevel)
             {
                 return experience;
             }
@@ -320,21 +603,30 @@ public class GameManager : MonoBehaviour
         return null;
     }
 
+
+    // =========================================================
+    // BUSCAR MEJOR EXPERIENCIA
+    // =========================================================
+
     private CellExperience GetBestExperience()
     {
         CellExperience best = null;
 
-        foreach (CellExperience experience in experiences)
+
+        foreach (
+            CellExperience experience
+            in experiences)
         {
-            // Exigimos varias observaciones antes de confiar
-            // en una estrategia.
-            if (experience.attempts <
+            if (
+                experience.attempts <
                 minimumAttemptsToLearn)
             {
                 continue;
             }
 
-            if (best == null ||
+
+            if (
+                best == null ||
                 experience.LearningScore >
                 best.LearningScore)
             {
@@ -342,10 +634,369 @@ public class GameManager : MonoBehaviour
             }
         }
 
+
         return best;
     }
 
-    private string GetColorName(int colorIndex)
+
+    // =========================================================
+    // FIN DE RONDA
+    // =========================================================
+
+    private void EndRound()
+    {
+        Debug.Log(
+            "===== FIN DE RONDA " +
+            currentRound +
+            " ====="
+        );
+
+
+        // Registrar células supervivientes.
+        if (cellSpawner != null)
+        {
+            cellSpawner.RegisterSurvivingCells();
+        }
+
+
+        UpdateStatsUI();
+        UpdateLearningTableUI();
+
+
+        // Eliminar células restantes.
+        if (cellSpawner != null)
+        {
+            cellSpawner.ClearCells();
+        }
+
+
+        // Mostrar resultado.
+        ShowRoundResults();
+
+
+        // Pausar hasta CONTINUAR.
+        waitingForNextRound = true;
+    }
+
+
+    // =========================================================
+    // MOSTRAR RESULTADOS
+    // =========================================================
+
+    private void ShowRoundResults()
+    {
+        if (resultEliminatedText != null)
+        {
+            resultEliminatedText.text =
+                "Eliminadas: " +
+                roundEliminations;
+        }
+
+
+        if (resultSurvivorsText != null)
+        {
+            resultSurvivorsText.text =
+                "Sobrevivientes: " +
+                roundSurvivals;
+        }
+
+
+        if (resultLearningText != null)
+        {
+            CellExperience best =
+                GetBestExperience();
+
+
+            if (best != null)
+            {
+                resultLearningText.text =
+                    "Mejor estrategia: " +
+                    GetColorName(
+                        best.colorIndex
+                    ) +
+                    " + " +
+                    GetSizeName(
+                        best.sizeLevel
+                    ) +
+                    "\nSupervivencia: " +
+                    (
+                        best.SurvivalRate *
+                        100f
+                    ).ToString("F1") +
+                    "%";
+            }
+            else
+            {
+                resultLearningText.text =
+                    "Recopilando datos...";
+            }
+        }
+
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(true);
+        }
+    }
+
+
+    // =========================================================
+    // CONTINUAR A SIGUIENTE RONDA
+    // =========================================================
+
+    public void ContinueToNextRound()
+    {
+        if (!waitingForNextRound)
+        {
+            return;
+        }
+
+
+        waitingForNextRound = false;
+
+
+        currentRound++;
+
+        currentTime =
+            roundDuration;
+
+        roundSurvivals = 0;
+
+        roundEliminations = 0;
+
+
+        if (roundResultPanel != null)
+        {
+            roundResultPanel.SetActive(false);
+        }
+
+
+        UpdateRoundUI();
+        UpdateStatsUI();
+        UpdateLearningTableUI();
+
+
+        if (cellSpawner != null)
+        {
+            cellSpawner.SpawnCells();
+        }
+
+
+        Debug.Log(
+            "===== COMIENZA RONDA " +
+            currentRound +
+            " ====="
+        );
+    }
+
+
+    // =========================================================
+    // COLOR DEL ENTORNO
+    // =========================================================
+
+    private void ApplyEnvironmentColor()
+    {
+        Camera mainCamera =
+            Camera.main;
+
+
+        if (mainCamera != null)
+        {
+            mainCamera.backgroundColor =
+                environmentColor;
+        }
+    }
+
+
+    // =========================================================
+    // TABLA DE APRENDIZAJE
+    // =========================================================
+
+    private void UpdateLearningTableUI()
+    {
+        if (learningTableText == null)
+        {
+            return;
+        }
+
+
+        string table =
+            "MEMORIA DE LA IA\n\n";
+
+
+        table +=
+            "              PEQ    MED    GRA\n";
+
+
+        string[] colorNames =
+        {
+            "Rojo",
+            "Verde",
+            "Azul",
+            "Amarillo",
+            "Magenta"
+        };
+
+
+        for (
+            int colorIndex = 0;
+            colorIndex < 5;
+            colorIndex++)
+        {
+            table +=
+                colorNames[colorIndex]
+                    .PadRight(12);
+
+
+            for (
+                int sizeLevel = 0;
+                sizeLevel < 3;
+                sizeLevel++)
+            {
+                CellExperience experience =
+                    FindExperience(
+                        colorIndex,
+                        sizeLevel
+                    );
+
+
+                float percentage = 0f;
+
+
+                if (
+                    experience != null &&
+                    experience.attempts > 0)
+                {
+                    percentage =
+                        experience.SurvivalRate *
+                        100f;
+                }
+
+
+                table +=
+                    percentage
+                        .ToString("F0") +
+                    "%".PadLeft(6);
+            }
+
+
+            table += "\n";
+        }
+
+
+        learningTableText.text =
+            table;
+    }
+
+
+    // =========================================================
+    // UI
+    // =========================================================
+
+    private void UpdateScoreUI()
+    {
+        if (scoreText != null)
+        {
+            scoreText.text =
+                "Puntuación: " +
+                score;
+        }
+    }
+
+
+    private void UpdateTimerUI()
+    {
+        if (timerText != null)
+        {
+            timerText.text =
+                "Tiempo: " +
+                Mathf.CeilToInt(
+                    currentTime
+                );
+        }
+    }
+
+
+    private void UpdateRoundUI()
+    {
+        if (roundText != null)
+        {
+            roundText.text =
+                "Ronda: " +
+                currentRound;
+        }
+    }
+
+
+    private void UpdateStatsUI()
+    {
+        if (survivorsText != null)
+        {
+            survivorsText.text =
+                "Sobrevivientes: " +
+                roundSurvivals;
+        }
+
+
+        if (eliminatedText != null)
+        {
+            eliminatedText.text =
+                "Eliminadas: " +
+                roundEliminations;
+        }
+
+
+        if (learningText != null)
+        {
+            CellExperience best =
+                GetBestExperience();
+
+
+            if (best != null)
+            {
+                learningText.text =
+                    "Mejor estrategia: " +
+                    GetColorName(
+                        best.colorIndex
+                    ) +
+                    " + " +
+                    GetSizeName(
+                        best.sizeLevel
+                    ) +
+                    " | " +
+                    (
+                        best.SurvivalRate *
+                        100f
+                    ).ToString("F1") +
+                    "%";
+            }
+            else
+            {
+                learningText.text =
+                    "Aprendizaje: recopilando datos...";
+            }
+        }
+    }
+
+
+    private void UpdateLearningModeUI(
+        string mode)
+    {
+        if (learningModeText != null)
+        {
+            learningModeText.text =
+                "Modo IA: " +
+                mode;
+        }
+    }
+
+
+    // =========================================================
+    // NOMBRES
+    // =========================================================
+
+    private string GetColorName(
+        int colorIndex)
     {
         switch (colorIndex)
         {
@@ -369,7 +1020,9 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private string GetSizeName(int sizeLevel)
+
+    private string GetSizeName(
+        int sizeLevel)
     {
         switch (sizeLevel)
         {
@@ -384,299 +1037,6 @@ public class GameManager : MonoBehaviour
 
             default:
                 return "Desconocido";
-        }
-    }
-
-    private void EndRound()
-    {
-        Debug.Log(
-            "FIN DE LA RONDA " +
-            currentRound
-        );
-
-        // Registrar las células que sobrevivieron.
-        if (cellSpawner != null)
-        {
-            cellSpawner.RegisterSurvivingCells();
-        }
-
-        // Actualizar estadísticas antes de mostrarlas.
-        UpdateStatsUI();
-        UpdateLearningTableUI();
-
-        // Mostrar resultados.
-        ShowRoundResults();
-
-        // Eliminar las células de la ronda anterior.
-        if (cellSpawner != null)
-        {
-            cellSpawner.ClearCells();
-        }
-
-        waitingForNextRound = true;
-    }
-
-    private void ShowRoundResults()
-    {
-        if (resultEliminatedText != null)
-        {
-            resultEliminatedText.text =
-                "Eliminadas: " +
-                roundEliminations;
-        }
-
-        if (resultSurvivorsText != null)
-        {
-            resultSurvivorsText.text =
-                "Sobrevivientes: " +
-                roundSurvivals;
-        }
-
-        if (resultLearningText != null)
-        {
-            CellExperience best =
-                GetBestExperience();
-
-            if (best != null)
-            {
-                resultLearningText.text =
-                    "Mejor estrategia: " +
-                    GetColorName(best.colorIndex) +
-                    " + " +
-                    GetSizeName(best.sizeLevel) +
-                    "\nSupervivencia: " +
-                    (best.SurvivalRate * 100f)
-                        .ToString("F1") +
-                    "%";
-            }
-            else
-            {
-                resultLearningText.text =
-                    "Mejor estrategia: recopilando datos...";
-            }
-        }
-
-        if (roundResultPanel != null)
-        {
-            roundResultPanel.SetActive(true);
-        }
-    }
-
-    public void RestartGame()
-    {
-        Time.timeScale = 1f;
-
-        SceneManager.LoadScene(
-            SceneManager.GetActiveScene().buildIndex
-        );
-    }
-    public void ContinueToNextRound()
-    {
-        if (!waitingForNextRound)
-            return;
-
-        // Si ya terminamos la última ronda,
-        // mostramos la pantalla final.
-        if (currentRound >= maxRounds)
-        {
-            ShowGameOver();
-            return;
-        }
-
-        waitingForNextRound = false;
-
-        currentRound++;
-        currentTime = roundDuration;
-
-        roundSurvivals = 0;
-        roundEliminations = 0;
-
-        UpdateRoundUI();
-        UpdateStatsUI();
-        UpdateLearningTableUI();
-
-        if (roundResultPanel != null)
-        {
-            roundResultPanel.SetActive(false);
-        }
-
-        Debug.Log(
-            "COMIENZA LA RONDA " +
-            currentRound
-        );
-
-        if (cellSpawner != null)
-        {
-            cellSpawner.SpawnCells();
-        }
-    }
-
-    private void ShowGameOver()
-    {
-        gameFinished = true;
-
-        if (roundResultPanel != null)
-        {
-            roundResultPanel.SetActive(false);
-        }
-
-        if (cellSpawner != null)
-        {
-            cellSpawner.ClearCells();
-        }
-
-        if (finalScoreText != null)
-        {
-            finalScoreText.text =
-                "Puntuación final: " +
-                score;
-        }
-
-        if (finalRoundText != null)
-        {
-            finalRoundText.text =
-                "Rondas completadas: " +
-                maxRounds;
-        }
-
-        if (gameOverPanel != null)
-        {
-            gameOverPanel.SetActive(true);
-        }
-
-        Debug.Log(
-            "FIN DE LA PARTIDA"
-        );
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (scoreText != null)
-        {
-            scoreText.text =
-                "Puntuación: " + score;
-        }
-    }
-
-    private void UpdateTimerUI()
-    {
-        if (timerText != null)
-        {
-            timerText.text =
-                "Tiempo: " +
-                Mathf.CeilToInt(currentTime);
-        }
-    }
-
-    private void UpdateRoundUI()
-    {
-        if (roundText != null)
-        {
-            roundText.text =
-                "Ronda: " +
-                currentRound;
-        }
-    }
-
-    private void UpdateStatsUI()
-    {
-        if (survivorsText != null)
-        {
-            survivorsText.text =
-                "Sobrevivientes: " +
-                roundSurvivals;
-        }
-
-        if (eliminatedText != null)
-        {
-            eliminatedText.text =
-                "Eliminadas: " +
-                roundEliminations;
-        }
-
-        if (learningText != null)
-        {
-            CellExperience best =
-                GetBestExperience();
-
-            if (best != null)
-            {
-                learningText.text =
-                    "Mejor estrategia: " +
-                    GetColorName(best.colorIndex) +
-                    " + " +
-                    GetSizeName(best.sizeLevel) +
-                    " | " +
-                    (best.SurvivalRate * 100f).ToString("F1") +
-                    "%";
-            }
-            else
-            {
-                learningText.text =
-                    "Aprendizaje: recopilando datos...";
-            }
-        }
-    }
-    private void UpdateLearningTableUI()
-    {
-        if (learningTableText == null)
-            return;
-
-        string table = "MEMORIA DE LA IA\n\n";
-
-        table += "             PEQ    MED    GRA\n";
-
-        string[] colorNames =
-        {
-        "Rojo",
-        "Verde",
-        "Azul",
-        "Amarillo",
-        "Magenta"
-    };
-
-        for (int colorIndex = 0;
-             colorIndex < colorNames.Length;
-             colorIndex++)
-        {
-            table += colorNames[colorIndex].PadRight(10);
-
-            for (int sizeLevel = 0;
-                 sizeLevel < 3;
-                 sizeLevel++)
-            {
-                CellExperience experience =
-                    FindExperience(
-                        colorIndex,
-                        sizeLevel
-                    );
-
-                float percentage = 0f;
-
-                if (experience != null &&
-                    experience.attempts > 0)
-                {
-                    percentage =
-                        experience.SurvivalRate * 100f;
-                }
-
-                table +=
-                    percentage.ToString("F0") +
-                    "%".PadLeft(6);
-            }
-
-            table += "\n";
-        }
-
-        learningTableText.text = table;
-    }
-    private void UpdateLearningModeUI(
-        string mode)
-    {
-        if (learningModeText != null)
-        {
-            learningModeText.text =
-                "Modo IA: " + mode;
         }
     }
 }
