@@ -7,23 +7,20 @@ public class CellSpawner : MonoBehaviour
     [SerializeField] private GameObject cellPrefab;
     [SerializeField] private int cellsToSpawn = 5;
 
-    [Header("Posiciones de aparición")]
-    [SerializeField] private float screenMargin = 0.15f;
-
-    private List<GameObject> activeCells =
+    private readonly List<GameObject> activeCells =
         new List<GameObject>();
 
-    // Cinco posiciones fijas dentro de la pantalla.
-    // Usamos coordenadas de Viewport:
-    // X = 0 izquierda, 1 derecha
-    // Y = 0 abajo, 1 arriba
+    // Posiciones relativas a la cámara.
+    // De esta forma funcionan aunque cambie
+    // el tamaño de la ventana Game.
     private readonly Vector2[] spawnPoints =
     {
-        new Vector2(0.20f, 0.40f),
-        new Vector2(0.50f, 0.40f),
-        new Vector2(0.80f, 0.40f),
-        new Vector2(0.30f, 0.70f),
-        new Vector2(0.70f, 0.70f)
+        new Vector2(0.20f, 0.32f),
+        new Vector2(0.50f, 0.32f),
+        new Vector2(0.80f, 0.32f),
+
+        new Vector2(0.32f, 0.68f),
+        new Vector2(0.68f, 0.68f)
     };
 
     public void SpawnCells()
@@ -31,7 +28,7 @@ public class CellSpawner : MonoBehaviour
         if (cellPrefab == null)
         {
             Debug.LogError(
-                "CellSpawner: No se ha asignado Cell Prefab."
+                "CellSpawner: Cell Prefab no está asignado."
             );
 
             return;
@@ -42,24 +39,25 @@ public class CellSpawner : MonoBehaviour
         if (mainCamera == null)
         {
             Debug.LogError(
-                "CellSpawner: No se encontró Main Camera."
+                "CellSpawner: No existe una Main Camera."
             );
 
             return;
         }
 
-        activeCells.Clear();
+        // Por seguridad, eliminamos cualquier célula anterior.
+        ClearCells();
 
-        int amountToSpawn =
+        int amount =
             Mathf.Min(
                 cellsToSpawn,
                 spawnPoints.Length
             );
 
-        for (int i = 0; i < amountToSpawn; i++)
+        for (int i = 0; i < amount; i++)
         {
-            Vector3 spawnPosition =
-                ViewportToWorldPosition(
+            Vector3 worldPosition =
+                GetWorldPosition(
                     mainCamera,
                     spawnPoints[i]
                 );
@@ -67,42 +65,34 @@ public class CellSpawner : MonoBehaviour
             GameObject newCell =
                 Instantiate(
                     cellPrefab,
-                    spawnPosition,
-                    Quaternion.identity
+                    worldPosition,
+                    Quaternion.identity,
+                    transform
                 );
+
+            newCell.name =
+                "Cell_" + (i + 1);
 
             activeCells.Add(newCell);
         }
 
         Debug.Log(
-            "Células generadas: " +
+            "CELULAS CREADAS: " +
             activeCells.Count
         );
     }
 
-    private Vector3 ViewportToWorldPosition(
+    private Vector3 GetWorldPosition(
         Camera camera,
         Vector2 viewportPosition)
     {
-        // Aplicamos un pequeño margen para alejarnos
-        // de los bordes de la pantalla.
-        float x = Mathf.Clamp(
-            viewportPosition.x,
-            screenMargin,
-            1f - screenMargin
-        );
-
-        float y = Mathf.Clamp(
-            viewportPosition.y,
-            screenMargin,
-            1f - screenMargin
-        );
-
         Vector3 viewportPoint =
             new Vector3(
-                x,
-                y,
-                Mathf.Abs(camera.transform.position.z)
+                viewportPosition.x,
+                viewportPosition.y,
+                Mathf.Abs(
+                    camera.transform.position.z
+                )
             );
 
         Vector3 worldPosition =
@@ -110,8 +100,6 @@ public class CellSpawner : MonoBehaviour
                 viewportPoint
             );
 
-        // Como nuestro juego es 2D,
-        // todas las células deben estar en Z = 0.
         worldPosition.z = 0f;
 
         return worldPosition;
@@ -121,26 +109,26 @@ public class CellSpawner : MonoBehaviour
     {
         foreach (GameObject cellObject in activeCells)
         {
-            if (cellObject != null)
-            {
-                Cell cell =
-                    cellObject.GetComponent<Cell>();
+            if (cellObject == null)
+                continue;
 
-                if (cell != null)
-                {
-                    cell.RegisterSurvival();
-                }
+            Cell cell =
+                cellObject.GetComponent<Cell>();
+
+            if (cell != null)
+            {
+                cell.RegisterSurvival();
             }
         }
     }
 
     public void ClearCells()
     {
-        foreach (GameObject cell in activeCells)
+        foreach (GameObject cellObject in activeCells)
         {
-            if (cell != null)
+            if (cellObject != null)
             {
-                Destroy(cell);
+                Destroy(cellObject);
             }
         }
 

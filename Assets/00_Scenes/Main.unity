@@ -1640,7 +1640,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CellSpawner
   cellPrefab: {fileID: 470585591928324192, guid: 531b8c0e758001e40b05ef83e0a29078, type: 3}
   cellsToSpawn: 5
-  screenMargin: 0.15
 --- !u!4 &694063254
 Transform:
   m_ObjectHideFlags: 0
@@ -1708,20 +1707,17 @@ MonoBehaviour:
   learningText: {fileID: 210918073}
   learningModeText: {fileID: 1806921027}
   learningTableText: {fileID: 1108000360}
-  gameOverPanel: {fileID: 397508178}
-  finalScoreText: {fileID: 576636551}
-  finalRoundText: {fileID: 1917613451}
-  startPanel: {fileID: 1260782673}
   roundResultPanel: {fileID: 1983823228}
   resultEliminatedText: {fileID: 603664269}
   resultSurvivorsText: {fileID: 49757317}
   resultLearningText: {fileID: 2086352994}
+  startPanel: {fileID: 1260782673}
   roundDuration: 10
-  maxRounds: 5
   cellSpawner: {fileID: 694063253}
   explorationChance: 0.3
-  environmentColor: {r: 0.3, g: 0.3, b: 0.3, a: 1}
   minimumAttemptsToLearn: 2
+  adaptationPerFailure: 0.2
+  environmentColor: {r: 0.9716981, g: 0.041251317, b: 0.041251317, a: 1}
 --- !u!1 &846985401
 GameObject:
   m_ObjectHideFlags: 0
